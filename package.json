@@ -1,25 +1,17 @@
 {
-  "name": "@lionello/onedrive-cli",
+  "name": "onedrive-cli",
   "version": "1.0.3",
   "description": "OneDrive CLI",
-  "bin": "bin/onedrive",
   "scripts": {
-    "lint": "npx eslint bin/onedrive",
+    "lint": "npx eslint src/onedrive.js",
     "readme": "redcarpet README.md >docs/index.html"
   },
-  "keywords": [
-    "onedrive",
-    "skydrive",
-    "cli",
-    "upload",
-    "download"
-  ],
-  "repository": {
-    "type": "git",
-    "url": "git@github.com:lionello/onedrive-cli.git"
-  },
+  "keywords": [],
   "author": "Lionello Lunesu",
   "license": "MIT",
+  "bin": {
+    "onedrive": "src/onedrive.js"
+  },
   "dependencies": {
     "colors": "^1.1.2",
     "mime": "^1.3.4",

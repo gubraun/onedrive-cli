@@ -144,7 +144,7 @@ function getContent(url) {
 
 
 function sanitize(remote) {
-    return remote.replace(/^:?\/?\.?/, '/drive/root:/') + ':'
+    return encodeURIComponent(remote).replace(/^:?\/?\.?/, '/drive/root:/') + ':'
 }
 
 
@@ -469,9 +469,9 @@ function cat(args) {
 
 function loginUrl() {
     console.log("\nBrowse to",
-        Colors.underline("https://login.live.com/oauth20_authorize.srf?client_id=0000000040197E82&scope=onedrive.readwrite&response_type=token&redirect_uri=https%3A%2F%2Fwww.lunesu.com%2Fonedrive-cli%2Foauthcallbackhandler.html") )
-        //Colors.underline("https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=0000000040197E82&scope=onedrive.readwrite&response_type=token&redirect_uri=https%3A%2F%2Fwww.lunesu.com%2Fonedrive-cli%2Foauthcallbackhandler.html") )
+        Colors.underline("https://login.live.com/oauth20_authorize.srf?client_id=0000000040197E82&scope=onedrive.readwrite&response_type=token&redirect_uri=https%3A%2F%2Fwww.lunesu.com%2Fonedrive-cli%2Foauthcallbackhandler.html"))
 }
+// https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=0000000040197E82&scope=onedrive.readwrite&response_type=token&redirect_uri=https%3A%2F%2Fwww.lunesu.com%2Fonedrive-cli%2Foauthcallbackhandler.html
 
 
 function login(args) {
@@ -493,7 +493,7 @@ function ln(args) {
     }
     else {
         var remote = sanitize(args[0])
-        return call(remote+'/action.createLink', 'POST', {"type":"view"})
+        return call(remote + '/action.createLink', 'POST', {"type":"view"})
             .then(result => {
                 console.log(Colors.underline(convertToDirectLink(result.link.webUrl)))
             })
@@ -665,14 +665,14 @@ function trimTrailingChars(s, charToTrim) {
     var result = s.replace(regExp, "");
 
     return result;
-  }
+}
 
-function convertToDirectLink(url) { 
+function convertToDirectLink(url) {
     // https://1drv.ms/u/s!AkijuZglD51udjvlclZWSNf_2wo"
-    let sharingUrl = new Buffer.from(url)
-    let base64Value = sharingUrl.toString('base64')
-    let encodedUrl = "u!" + trimTrailingChars(base64Value, '=').replace('/', '_').replace('+', '-')
-    let resultUrl = Util.format("https://api.onedrive.com/v1.0/shares/%s/root/content", encodedUrl);
+    const sharingUrl = new Buffer.from(url)
+    const base64Value = sharingUrl.toString('base64')
+    const encodedUrl = "u!" + trimTrailingChars(base64Value, '=').replace('/', '_').replace('+', '-')
+    const resultUrl = Util.format("https://api.onedrive.com/v1.0/shares/%s/root/content", encodedUrl);
     return resultUrl;
 }
 
