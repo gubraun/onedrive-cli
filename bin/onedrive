@@ -7,9 +7,11 @@ const Mime   = require('mime')
 const Path   = require('path')
 const Crypto = require('crypto')
 const Zlib   = require('zlib')
+const Util   = require('util')
 
 const TOKEN_PATH = Path.join(require('os').homedir(),'.onedrive-cli-token')
 const API_BASE_URL = 'https://api.onedrive.com/v1.0/'
+//const API_BASE_URL = 'https://graph.microsoft.com/v1.0/me'
 
 
 function sha1hash(data) {
@@ -468,6 +470,7 @@ function cat(args) {
 function loginUrl() {
     console.log("\nBrowse to",
         Colors.underline("https://login.live.com/oauth20_authorize.srf?client_id=0000000040197E82&scope=onedrive.readwrite&response_type=token&redirect_uri=https%3A%2F%2Fwww.lunesu.com%2Fonedrive-cli%2Foauthcallbackhandler.html") )
+        //Colors.underline("https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=0000000040197E82&scope=onedrive.readwrite&response_type=token&redirect_uri=https%3A%2F%2Fwww.lunesu.com%2Fonedrive-cli%2Foauthcallbackhandler.html") )
 }
 
 
@@ -492,7 +495,7 @@ function ln(args) {
         var remote = sanitize(args[0])
         return call(remote+'/action.createLink', 'POST', {"type":"view"})
             .then(result => {
-                console.log(Colors.underline(result.link.webUrl))
+                console.log(Colors.underline(convertToDirectLink(result.link.webUrl)))
             })
     }
 }
@@ -657,9 +660,23 @@ function find(args) {
     }
 }
 
+function trimTrailingChars(s, charToTrim) {
+    var regExp = new RegExp(charToTrim + "+$");
+    var result = s.replace(regExp, "");
+
+    return result;
+  }
+
+function convertToDirectLink(url) { 
+    // https://1drv.ms/u/s!AkijuZglD51udjvlclZWSNf_2wo"
+    let sharingUrl = new Buffer.from(url)
+    let base64Value = sharingUrl.toString('base64')
+    let encodedUrl = "u!" + trimTrailingChars(base64Value, '=').replace('/', '_').replace('+', '-')
+    let resultUrl = Util.format("https://api.onedrive.com/v1.0/shares/%s/root/content", encodedUrl);
+    return resultUrl;
+}
 
 function main(argv) {
-
     switch (argv[2]) {
 
     case undefined:
