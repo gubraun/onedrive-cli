@@ -13,9 +13,15 @@
     "onedrive": "src/onedrive.js"
   },
   "dependencies": {
+    "@azure/msal-node": "^1.0.0-alpha.5",
+    "@microsoft/microsoft-graph-client": "^2.0.0",
     "colors": "^1.1.2",
+    "express": "^4.17.1",
+    "isomorphic-fetch": "^2.2.1",
     "mime": "^1.3.4",
     "moment": "^2.17.1",
+    "msal": "^1.4.0",
+    "open": "^7.2.1",
     "request": "^2.88.2",
     "request-promise-native": "^1.0.8"
   },

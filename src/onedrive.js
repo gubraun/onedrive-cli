@@ -1,17 +1,39 @@
 #!/usr/bin/env node
-const RP     = require('request-promise-native')
-const Colors = require('colors')
-const Moment = require('moment')
-const FS     = require('fs')
-const Mime   = require('mime')
-const Path   = require('path')
-const Crypto = require('crypto')
-const Zlib   = require('zlib')
-const Util   = require('util')
+const RP     = require('request-promise-native');
+const Colors = require('colors');
+const Moment = require('moment');
+const Mime   = require('mime');
+const Path   = require('path');
+const Crypto = require('crypto');
+const Zlib   = require('zlib');
+const Util   = require('util');
+const fs      = require('fs');
 
-const TOKEN_PATH = Path.join(require('os').homedir(),'.onedrive-cli-token')
-const API_BASE_URL = 'https://api.onedrive.com/v1.0/'
-//const API_BASE_URL = 'https://graph.microsoft.com/v1.0/me'
+const auth    = require('./auth');
+
+const Fetch  = require('isomorphic-fetch');
+//const Client = require('@microsoft/microsoft-graph-client');
+
+const TOKEN_PATH = Path.join(require('os').homedir(),'.onedrive-cli.json');
+//const API_BASE_URL = 'https://api.onedrive.com/v1.0/'
+const API_BASE_URL = 'https://graph.microsoft.com/v1.0'
+
+let accounts;
+let server;
+
+
+function readFile(filename) {
+    return new Promise( (resolve,reject) => {
+        fs.readFile(filename, (err,data) => err?reject(err):resolve(data) )
+    })
+}
+
+
+function writeFile(filename, data) {
+    return new Promise( (resolve,reject) => {
+        fs.writeFile(filename, data, {encoding: null}, err => err?reject(err):resolve() )
+    })
+}
 
 
 function sha1hash(data) {
@@ -37,20 +59,6 @@ function padRight(str, len) {
 }
 
 
-function readFile(filename) {
-    return new Promise( (resolve,reject) => {
-        FS.readFile(filename, (err,data) => err?reject(err):resolve(data) )
-    })
-}
-
-
-function writeFile(filename, data) {
-    return new Promise( (resolve,reject) => {
-        FS.writeFile(filename, data, {encoding: null}, err => err?reject(err):resolve() )
-    })
-}
-
-
 function print(data) {
     return new Promise( (resolve,reject) => {
         process.stdout.write(data, err => err?reject(err):resolve() )
@@ -60,7 +68,7 @@ function print(data) {
 
 function unlink(path) {
     return new Promise( (resolve,reject) => {
-        FS.unlink(path, err => err?reject(err):resolve() )
+        fs.unlink(path, err => err?reject(err):resolve() )
     })
 }
 
@@ -80,15 +88,21 @@ function humanize(num) {
 
 function pp(num) { return padLeft(humanize(num), 6) }
 
-
+/*
 var lazyToken = function() {
-    return readFile(TOKEN_PATH)
+    return fs.readFile(TOKEN_PATH)
         .then(buffer => {
             const token = Promise.resolve(buffer.toString())
             // Next time we're invoked, simply return the resolved promise
             lazyToken = function() { return token; }
             return token
         })
+        
+}
+*/
+
+var lazyToken = function() {
+  return auth.getAuthToken();
 }
 
 
@@ -144,7 +158,8 @@ function getContent(url) {
 
 
 function sanitize(remote) {
-    return encodeURIComponent(remote).replace(/^:?\/?\.?/, '/drive/root:/') + ':'
+    //return encodeURIComponent(remote).replace(/^:?\/?\.?/, '/drive/root:/') + ':'
+    return encodeURIComponent(remote).replace(/^:?\/?\.?/, '/drive/root');
 }
 
 
@@ -172,7 +187,7 @@ function df() {
                     pp(drive.quota.remaining),
                     padLeft(capacity,9),
                     pp(drive.quota.deleted),
-                    drive.status.state)
+                    drive.quota.state)
             }
         })
 }
@@ -237,10 +252,18 @@ function ls(folders) {
     }
 
     //console.log(Colors.bold('Permission Cnt Owner            Size     Date         Name'))
-    return reducePromise(folders, (prev,folder) =>
-        ls_paged(prev, sanitize(folder)+'/children'),
-    0)
-        .then(result => "total "+result)
+    return reducePromise(folders, (prev,folder) => {
+        //ls_paged(prev, sanitize(folder)+'/children'), 0)
+        let url = '/me/drive';
+        if (folder === '') {
+            url = url + '/root/children';
+        }
+        else {
+            url = url + '/root:/' + folder + ':/children';
+        }
+        ls_paged(prev, url)
+    }, 0)
+    .then(result => "total "+result);
 }
 
 
@@ -390,7 +413,7 @@ function cp_paged(cont, target) {
                     const folders = result.value.filter(info => info.folder)
                     return reducePromise(folders, (_,info) => {
                         const folder = Path.join(target, info.name)
-                        return new Promise( resolve => FS.mkdir(folder, _ => resolve(folder)) )
+                        return new Promise( resolve => fs.mkdir(folder, _ => resolve(folder)) )
                             .then(folder => cp_paged(sanitize(absolute(info)) + '/children', folder))
                     })
                 })
@@ -471,9 +494,16 @@ function loginUrl() {
     console.log("\nBrowse to",
         Colors.underline("https://login.live.com/oauth20_authorize.srf?client_id=0000000040197E82&scope=onedrive.readwrite&response_type=token&redirect_uri=https%3A%2F%2Fwww.lunesu.com%2Fonedrive-cli%2Foauthcallbackhandler.html"))
 }
-// https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=0000000040197E82&scope=onedrive.readwrite&response_type=token&redirect_uri=https%3A%2F%2Fwww.lunesu.com%2Fonedrive-cli%2Foauthcallbackhandler.html
 
+// Flow from Azure CLI
+// - on az login, start browser with URL:
+//   https://login.microsoftonline.com/common/oauth2/authorize?response_type=code&client_id=04b07795-8ddb-461a-bbee-02f9e1bf7b46&redirect_uri=http://localhost:8400&state=l0mijhvse30246nqiemx&resource=https://management.core.windows.net/&prompt=select_account
+// - on success or failure, redirect to
+//   http://localhost:8400/?code=AQABAAIAAAAGV_bv21oQQ4ROqh0_1-tA6e14--ktggC_zruIS3B8UdxpJH__48o3jJcjqgfzuYv8HEAopmX2gAuZhxcp3YVAlZqQ5PXtRwi887_3ITEbRqzER4EdDXRPGdavaNwxmKe26t1ujdu67tfBKIUDKwzjVcfSijDp42xRuA5kSp-4GLPVnPcYvTF7jjmVhyQwe5AIz1J81vH5XCGFaDMFOtb58aKLg-FtD7-9-X4xvKQTurJxmA0dKoKna2xHe_f82NVtY2o4-e6-mcCilPTASvWjv9rtW9EExRK5ATOfoXULF4ZHGVUIgetUAH8DQMlVssUEVwGlNQGghUKAP9NJmKL4C_cw1h6l14ZWEBo3o8ma1NU_R9F_SxDuC-FmH_omxiMd59-457p_IiOE5O0b0rwWdPLk1pg2tpdfI2vBShXQoVk4opwSyCPEU93nzq5JTtFVrrS9HmdfhnteHuLrZYuQZnYiZwcwoS4gsfQhxwL0953PjWObKSn0P-LKFehrAuCXudIuSHr0kEuR6-1uyWk9XYPh9ZMg3YWs6fNyHAV1zSQ4zFiAWxy2Zsiuw07MwR0ld0XXWBGa7niXoFlWtCGeHSnYXq4c4CiekKNzC-Bs7aN9c3ojAyqzsYGrVmokkdWdeyt5x6_SwU3bWe59u8eLWzQeDzdWYcPbi_yZCzLLFbJc38Mk4a0Wm-wpnjQ2R-4gAA&state=mlhm1a2fuf86kzo4f08m&session_state=4eee0650-22cd-4833-8777-0479c4414cb0
+// Means: az CLI opens a local server on 8400
+//  using the auth code flow (request code, get code, request token, get token)
 
+/*
 function login(args) {
     const token = args.pop()
     if (typeof token === 'string') {
@@ -485,6 +515,11 @@ function login(args) {
         loginUrl()
     }
 }
+*/
+
+function login(args) {
+    auth.login();
+}
 
 
 function ln(args) {
@@ -492,7 +527,7 @@ function ln(args) {
         console.error("usage: ln file")
     }
     else {
-        var remote = sanitize(args[0])
+        var remote = sanitize(args[0]);
         return call(remote + '/action.createLink', 'POST', {"type":"view"})
             .then(result => {
                 console.log(Colors.underline(convertToDirectLink(result.link.webUrl)))
@@ -648,6 +683,7 @@ function find_paged(cont, expression) {
         })
 }
 
+
 function find(args) {
     if (args.length === 0) {
         console.error("usage: find path ... [-print0]")
@@ -660,12 +696,14 @@ function find(args) {
     }
 }
 
+
 function trimTrailingChars(s, charToTrim) {
     var regExp = new RegExp(charToTrim + "+$");
     var result = s.replace(regExp, "");
 
     return result;
 }
+
 
 function convertToDirectLink(url) {
     // https://1drv.ms/u/s!AkijuZglD51udjvlclZWSNf_2wo"
@@ -675,6 +713,7 @@ function convertToDirectLink(url) {
     const resultUrl = Util.format("https://api.onedrive.com/v1.0/shares/%s/root/content", encodedUrl);
     return resultUrl;
 }
+
 
 function main(argv) {
     switch (argv[2]) {
